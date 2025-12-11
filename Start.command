@@ -7,7 +7,7 @@ cd "$(dirname "$0")"
 echo "Kütüphane oluşturucu başlatılıyor..."
 
 # Python kodunu çalıştır (Mac'te genellikle python3 komutu kullanılır)
-python3 LabDraw.py
+python3 LibSketch.py
 
 # İşlem bitince pencere hemen kapanmasın diye beklet
 echo "İşlem tamamlandı. Çıkmak için bir tuşa basın..."

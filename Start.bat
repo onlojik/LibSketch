@@ -1,3 +1,3 @@
 @echo off
-python LabDraw.py
+python LibSketch.py
 pause
