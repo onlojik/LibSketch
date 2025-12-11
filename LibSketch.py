@@ -23,23 +23,30 @@ import matplotlib.patches as patches
 import textwrap
 import random
 import pandas as pd
-import os
-import sys
 import math
 
 # --- AYARLAR ---
 DOSYA_ADI = "BookList.xlsx"
-CIKTI_ADI = "kutuphane_gorseli.png"
+CIKTI_ADI = "bookshelf.png"
 
 # A4 Boyutları (İnç)
 FIG_WIDTH = 8.27
 FIG_HEIGHT = 11.69
 
-BG_COLOR = "#FFFFFF"
-SHELF_COLOR = "#222222"
-BOOK_EDGE_COLOR = "#444444"
+BG_COLOR = "#FFFFFF"     # Arka plan rengi
+SHELF_COLOR = "#888888"  # Raf rengi
+BOOK_EDGE_COLOR = "#444444" # Kitap kenar çizgisi rengi
 
 MAX_KITAP = 100
+
+# --- RENK PALETİ (Sarı Tonları) ---
+RENK_PALETI = [
+    "#FFD700", # Altın Sarısı
+    "#FFEC99", # Açık Sarı
+    "#FFC300", # Koyu Sarı
+    "#F4D03F", # Güneş Sarısı
+    "#F7DC6F", # Krem Sarı
+]
 
 def veri_oku():
     if not os.path.exists(DOSYA_ADI):
@@ -49,9 +56,10 @@ def veri_oku():
     try:
         df = pd.read_excel(DOSYA_ADI, dtype=str)
         df.columns = [c.strip() for c in df.columns]
+        
         if "Book Name" not in df.columns or "Author" not in df.columns:
              df = df.iloc[:, 0:2]
-             df.columns = ["Book Nameı", "Author"]
+             df.columns = ["Book Name", "Author"]
         
         df = df.dropna(subset=["Book Name", "Author"])
         
@@ -70,10 +78,14 @@ def veri_oku():
         sys.exit()
 
 def format_author_name(full_name):
+    # Yazarları mümkün olduğunca 2-3 satıra bölmeye çalış
     parts = full_name.split()
-    if len(parts) > 1:
-        # Soyad vurgusu
-        return f"{' '.join(parts[:-1])}\n{parts[-1]}"
+    if len(parts) >= 3:
+        # Örn: "Gabriel Garcia Marquez" -> "Gabriel Garcia\nMarquez"
+        mid = len(parts) // 2
+        return f"{' '.join(parts[:mid])}\n{' '.join(parts[mid:])}"
+    elif len(parts) == 2:
+        return f"{parts[0]}\n{parts[1]}"
     return full_name
 
 def chunks_distributed(lst, n):
@@ -83,35 +95,36 @@ def chunks_distributed(lst, n):
 
 def get_optimized_font_size(text, box_width, box_height, max_allowed_w):
     """
-    Verilen metni belirli bir kutuya sığdıracak en büyük fontu hesaplar.
-    box_width: Kitabın yüksekliği (Yazı 90 derece olduğu için genişlik sayılır)
-    box_height: Kitabın kalınlığı (Yazı için yükseklik sınırı)
+    OPTİMİZE EDİLMİŞ VERSİYON:
+    Büyük kitaplarda (book_height/width büyükse) daha cesur fontlar kullanır.
     """
     if not text: return 1
     
-    # Satır sayısını bul
     lines = text.split('\n')
     num_lines = len(lines)
     max_line_len = max([len(line) for line in lines])
     if max_line_len < 1: max_line_len = 1
     
-    # 1. KISIT: KİTAP KALINLIĞI (Spine Width Limit)
-    # Yazı boyu kitabın kalınlığından taşamaz.
-    # Harf genişliği yaklaşık font size'ın 0.6'sı gibidir (bold font).
-    # Çok satırlıysa font küçülmeli.
-    font_limit_spine = (max_allowed_w * 1.8) / (num_lines * 0.5 + 0.5)
+    # --- 1. KISIT: KİTAP KALINLIĞI (Spine Width) ---
+    # Eğer kitap çok kalınsa (max_allowed_w > 5 gibi), katsayıyı artır
+    # Normalde 2.0, kalın kitapta 2.3
+    width_multiplier = 2.0
+    if max_allowed_w > 4: 
+        width_multiplier = 2.4
+        
+    font_limit_spine = (max_allowed_w * width_multiplier) / (num_lines * 0.6 + 0.4)
     
-    # 2. KISIT: KİTAP YÜKSEKLİĞİ (Zone Height Limit)
-    # Yazının uzunluğu ayrılan %25 veya %75'lik alana sığmalı.
-    # Font Size * Karakter Sayısı * 0.5 (ortalama harf boyu çarpanı) = Alan
-    font_limit_zone = (box_width / max_line_len) * 1.7
+    # --- 2. KISIT: KİTAP UZUNLUĞU (Zone Height) ---
+    # Yazı uzunluğuna göre font
+    # Katsayıyı 1.8 -> 2.2'ye çıkardık, alanı daha agresif doldursun.
+    font_limit_zone = (box_width / max_line_len) * 2.2
     
-    # İkisinden küçük olanı seç ki kesin sığsın
     final_font = min(font_limit_spine, font_limit_zone)
     
-    # Alt ve üst limitler
-    if final_font > 28: final_font = 28
-    if final_font < 4: final_font = 4 # Okunabilirlik sınırı
+    # --- LİMİTLER ---
+    # Üst limiti 110'a çıkardık (Devasa kitaplar için)
+    if final_font > 110: final_font = 110
+    if final_font < 5: final_font = 5 
     
     return final_font
 
@@ -178,30 +191,28 @@ def create_final_bookshelf(book_list, filename=CIKTI_ADI):
             w = available_width * share
             h = max_book_height * random.uniform(0.90, 0.98) 
             
-            # --- ANA KİTAP KUTUSU ---
+            # Kitap çiz
+            secilen_renk = random.choice(RENK_PALETI)
             rect = patches.Rectangle((current_x, shelf_y + shelf_thickness), 
                                      w, h, 
                                      linewidth=0.8, 
                                      edgecolor=BOOK_EDGE_COLOR, 
-                                     facecolor="white")
+                                     facecolor=secilen_renk)
             ax.add_patch(rect)
             center_x = current_x + w / 2
 
             # ============================================================
-            # --- BÖLGE 1: YAZAR (%25 ALAN) ---
+            # --- BÖLGE 1: YAZAR (%25) ---
             # ============================================================
             author_zone_ratio = 0.25
             author_zone_height = h * author_zone_ratio
-            
-            # Bölgenin merkezi (Rafın üstünden %12.5 yukarıda)
             author_center_y = (shelf_y + shelf_thickness) + (author_zone_height / 2)
             
             author_formatted = format_author_name(author)
             
-            # Akıllı Font Hesabı (Yazar için)
             a_font_size = get_optimized_font_size(
                 text=author_formatted,
-                box_width=author_zone_height * 0.9, # %10 margin bırak
+                box_width=author_zone_height * 0.92, 
                 box_height=w,
                 max_allowed_w=w
             )
@@ -209,60 +220,65 @@ def create_final_bookshelf(book_list, filename=CIKTI_ADI):
             ax.text(center_x, author_center_y, 
                     author_formatted, 
                     rotation=90, 
-                    va='center', ha='center', # Tam ortaya kilitli
+                    va='center', ha='center',
                     multialignment='center',
                     fontsize=a_font_size, 
                     color="#444444", 
                     fontstyle='italic')
 
             # ============================================================
-            # --- BÖLGE 2: BAŞLIK (%75 ALAN) ---
+            # --- BÖLGE 2: BAŞLIK (%75) ---
             # ============================================================
             title_zone_ratio = 0.75
             title_zone_height = h * title_zone_ratio
-            
-            # Bölgenin merkezi: (Yazarın bittiği yer) + (Başlık alanının yarısı)
             title_center_y = (shelf_y + shelf_thickness) + author_zone_height + (title_zone_height / 2)
             
-            # Wrap Mantığı (Max 2 Satır Zorlaması)
-            # Eğer başlık alanı (title_zone_height) çok darsa, wrap karakter sayısını düşür
-            target_wrap = int(title_zone_height * 0.35) 
-            if target_wrap < 10: target_wrap = 10
+            # --- GELİŞMİŞ WRAP MANTIĞI ---
+            # Kitap çok uzun olsa bile tek satırda 22 karakteri geçmesine izin verme.
+            # Bu, metni alt satıra atarak fontun büyümesini sağlar (Blok etkisi).
+            
+            max_chars_per_line = 22
+            # Eğer kitap çok inceyse (w < 2), mecburen daha az karakter sığar
+            if w < 2.0: 
+                max_chars_per_line = 40 # İnce kitapta satır bölmek fontu öldürür, o yüzden bölme (akışına bırak)
+            else:
+                # Kalın kitapta böl ki büyüsün
+                max_chars_per_line = 22
+
+            # Hedef genişlik: Alanın %35'i veya max limit
+            calc_wrap = int(title_zone_height * 0.35)
+            target_wrap = min(calc_wrap, max_chars_per_line)
+            if target_wrap < 8: target_wrap = 8
             
             wrapper = textwrap.TextWrapper(width=target_wrap, break_long_words=False)
             wrapped_list = wrapper.wrap(title)
             
-            # 2 satırı geçerse genişleterek tekrar dene
+            # Retry logic
             retry = 0
-            while len(wrapped_list) > 2 and retry < 5:
-                target_wrap += 5
+            while len(wrapped_list) > 3 and retry < 5:
+                target_wrap += 4
                 wrapper = textwrap.TextWrapper(width=target_wrap, break_long_words=False)
                 wrapped_list = wrapper.wrap(title)
                 retry += 1
                 
             wrapped_title = "\n".join(wrapped_list)
             
-            # Akıllı Font Hesabı (Başlık için)
             t_font_size = get_optimized_font_size(
                 text=wrapped_title,
-                box_width=title_zone_height * 0.95, # %5 margin
+                box_width=title_zone_height * 0.96, # Biraz daha pay ver
                 box_height=w,
                 max_allowed_w=w
             )
             
-            # Başlık fontu biraz daha "Bold" olduğu için optik olarak büyük durur,
-            # Yazarla dengelemek için bazen çok az kısmak gerekebilir veya serbest bırakabiliriz.
-            # Şimdilik serbest bırakıyoruz.
-
             ax.text(center_x, title_center_y, 
                     wrapped_title, 
                     rotation=90, 
-                    va='center', ha='center', # Tam ortaya kilitli
+                    va='center', ha='center',
                     multialignment='center',
                     fontsize=t_font_size, 
                     fontweight='bold',
                     color="#000000",
-                    linespacing=1.1)
+                    linespacing=0.95)
 
             current_x += w 
 
